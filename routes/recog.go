@@ -5,60 +5,98 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/Kagami/go-face"
-	"github.com/davecgh/go-spew/spew"
 )
 
 const excluder = "Ignoring file"
 
-type Output struct {
-	Status string
+// Output Output
+
+type JSON struct {
+	People []People
+}
+type People struct {
+	Name   string   `json:"name"`
+	Photos []string `json:"photos"`
 }
 
-func Recognize(rec *face.Recognizer) http.HandlerFunc {
+// Recognize Recognize
+func Recognize() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		savedFilePath, err := saveFileFromReq(r)
 		if err != nil {
-			//			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
 			return
 		}
 		defer removeFile(savedFilePath)
 
-		cmd := exec.Command("/usr/bin/python3", "./face_recognition_cli.py", "./known", "./unknown")
+		cmd := exec.Command("python3", "-m", "face_recognition.face_recognition_cli", "./known", "./unknown")
 		out, err := cmd.Output()
-		if err != nil {
-			spew.Dump(err)
-			log.Fatal(err.Error())
-		}
-		var outb, errb bytes.Buffer
-
-		cmd.Stderr = &errb
-		cmd.Stdout = &outb
-		matches := []Output{}
-		for _, x := range strings.Split(string(out), "\n") {
-			if strings.Contains(x, excluder) || x == "" {
-				continue
-			}
-			matches = append(matches, Output{Status: strings.Split(x, ",")[1]})
-		}
-
-		b, err := json.Marshal(matches)
 		if err != nil {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		w.Write(b)
+		matches := []string{}
+		for _, x := range strings.Split(string(out), "\n") {
+			if strings.Contains(x, excluder) || x == "" {
+				continue
+			}
+			matches = append(matches, strings.Split(x, ",")[1])
+		}
 
+		x, _ := filepath.Abs("routes/reflect.json")
+		b, err := ioutil.ReadFile(x)
+		if err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		var ppl JSON
+		if err := json.Unmarshal(b, &ppl); err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+
+		foundPPL := []string{}
+		actor := FindActor(ppl.People, matches)
+
+		found := false
+		for _, x := range foundPPL {
+			if x == actor {
+				found = true
+			}
+		}
+		if !found {
+			foundPPL = append(foundPPL, actor)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(foundPPL); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}
+
+}
+
+func FindActor(ppl []People, matchedPhotos []string) string {
+
+	for _, p := range ppl {
+		for _, x := range p.Photos {
+			for _, photo := range matchedPhotos {
+				if photo == x {
+
+					return p.Name
+				}
+			}
+
+		}
+	}
+	return ""
 
 }
 
@@ -91,4 +129,14 @@ func saveFileFromReq(r *http.Request) (string, error) {
 	}
 	return filePath, nil
 
+}
+
+func AddIfNotPresent(arr []string, s string) []string {
+	for _, x := range arr {
+		if x == s {
+			continue
+		}
+		arr = append(arr, s)
+	}
+	return arr
 }
