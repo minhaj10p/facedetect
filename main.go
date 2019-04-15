@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/minhajuddinkhan/facerecog/routes"
+	"github.com/minhaj10p/facerecog/routes"
 )
 
 const dataDir = "./models"

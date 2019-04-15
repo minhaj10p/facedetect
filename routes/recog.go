@@ -9,21 +9,51 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/sirupsen/logrus"
 )
 
-const excluder = "Ignoring file"
+var msgsToIgnore = []string{
+	"no_persons_found",
+	"Ignoring file",
+	"unknown_person",
+	"More than one face found",
+}
+
+const excluder = ""
+const unknownPerson = ""
+const moreThanOneFace = ""
 
 // Output Output
 
-type JSON struct {
-	People []People
+// Threshold Threshold
+const Threshold = 5
+
+// CurrDir CurrDir
+func CurrDir() ([]string, error) {
+
+	info, err := ioutil.ReadDir("./known")
+	if err != nil {
+		return nil, err
+	}
+	listDirs := []string{}
+	for _, f := range info {
+		listDirs = append(listDirs, f.Name())
+	}
+	return listDirs, nil
 }
-type People struct {
-	Name   string   `json:"name"`
-	Photos []string `json:"photos"`
+
+func ignore(s string) bool {
+	for _, x := range msgsToIgnore {
+		if strings.Contains(s, x) || s == "" {
+			return true
+		}
+
+	}
+	return false
 }
 
 // Recognize Recognize
@@ -34,74 +64,76 @@ func Recognize() http.HandlerFunc {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		defer removeFile(savedFilePath)
-
-		cmd := exec.Command("python3", "-m", "face_recognition.face_recognition_cli", "./known", "./unknown")
-		out, err := cmd.Output()
+		defer os.Remove(savedFilePath)
+		dirs, err := CurrDir()
 		if err != nil {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		matches := []string{}
-		for _, x := range strings.Split(string(out), "\n") {
-			if strings.Contains(x, excluder) || x == "" {
-				continue
-			}
-			matches = append(matches, strings.Split(x, ",")[1])
-		}
-
-		x, _ := filepath.Abs("routes/reflect.json")
-		b, err := ioutil.ReadFile(x)
-		if err != nil {
-			w.Write([]byte(err.Error()))
-			return
-		}
-		var ppl JSON
-		if err := json.Unmarshal(b, &ppl); err != nil {
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		foundPPL := []string{}
-		actor := FindActor(ppl.People, matches)
-
-		found := false
-		for _, x := range foundPPL {
-			if x == actor {
-				found = true
-			}
-		}
-		if !found {
-			foundPPL = append(foundPPL, actor)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(foundPPL); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}
-
-}
-
-func FindActor(ppl []People, matchedPhotos []string) string {
-
-	for _, p := range ppl {
-		for _, x := range p.Photos {
-			for _, photo := range matchedPhotos {
-				if photo == x {
-
-					return p.Name
+		done := 0
+		respCh := make(chan string)
+		errCh := make(chan error)
+		for i, d := range dirs {
+			spew.Dump(i)
+			go func(d string, i int) {
+				matches := []string{}
+				t := time.Now()
+				defer func() {
+					logrus.Infof("goroutine %d took %f seconds", i, time.Since(t).Seconds())
+				}()
+				cmd := exec.Command("python3", "-m", "face_recognition.face_recognition_cli", "./known/"+d, "./unknown")
+				out, err := cmd.Output()
+				if err != nil {
+					errCh <- err
+					return
 				}
-			}
 
+				for _, x := range strings.Split(string(out), "\n") {
+					if ignore(x) {
+						continue
+					}
+					matches = append(matches, strings.Split(x, ",")[1])
+				}
+				if len(matches) >= Threshold {
+					respCh <- d
+				}
+				respCh <- ""
+			}(d, i)
 		}
+		response := []string{}
+		for {
+			select {
+			case name := <-respCh:
+				done++
+				spew.Dump(done)
+				if done >= len(dirs) {
+					w.Header().Set("Content-Type", "application/json")
+					err := json.NewEncoder(w).Encode(struct{ PossibleMatches []string }{PossibleMatches: response})
+					if err != nil {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+					logrus.Info("Responded.")
+					return
+				}
+				if name == "" {
+					continue
+				}
+				alreadyExists := false
+				for _, x := range response {
+					if x == name {
+						alreadyExists = true
+					}
+				}
+				if !alreadyExists {
+					response = append(response, name)
+				}
+			case err := <-errCh:
+				w.Write([]byte(err.Error()))
+				return
+			}
+		}
+
 	}
-	return ""
-
-}
-
-func removeFile(s string) error {
-	return os.Remove(s)
 }
 
 func saveFileFromReq(r *http.Request) (string, error) {
@@ -129,14 +161,4 @@ func saveFileFromReq(r *http.Request) (string, error) {
 	}
 	return filePath, nil
 
-}
-
-func AddIfNotPresent(arr []string, s string) []string {
-	for _, x := range arr {
-		if x == s {
-			continue
-		}
-		arr = append(arr, s)
-	}
-	return arr
 }
