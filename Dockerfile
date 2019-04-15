@@ -1,4 +1,4 @@
-FROM fatih/ubuntu-go
+FROM ubuntu
   
 #RUN wget https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 WORKDIR /go/src/github.com/minhaj10p/facerecog

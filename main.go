@@ -15,6 +15,7 @@ const excluder = "Ignoring file"
 
 func main() {
 	r := mux.NewRouter()
-	r.HandleFunc("/recognition", routes.Recognize())
+	r.HandleFunc("/recognition", routes.Recognize()).Methods("POST")
+	r.HandleFunc("/face", routes.AddFace()).Methods("POST")
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), r))
 }
