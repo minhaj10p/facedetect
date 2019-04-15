@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,6 +30,11 @@ const moreThanOneFace = ""
 
 // Threshold Threshold
 const Threshold = 5
+
+type Match struct {
+	Name  string
+	Count int
+}
 
 // CurrDir CurrDir
 func CurrDir() ([]string, error) {
@@ -71,17 +75,16 @@ func Recognize() http.HandlerFunc {
 			return
 		}
 		done := 0
-		respCh := make(chan string)
+		respCh := make(chan *Match)
 		errCh := make(chan error)
 		for i, d := range dirs {
-			spew.Dump(i)
 			go func(d string, i int) {
 				matches := []string{}
 				t := time.Now()
 				defer func() {
 					logrus.Infof("goroutine %d took %f seconds", i, time.Since(t).Seconds())
 				}()
-				cmd := exec.Command("python3", "-m", "face_recognition.face_recognition_cli", "./known/"+d, "./unknown")
+				cmd := exec.Command("python3", "-m", "face_recognition.face_recognition_cli", "--cpus", "-1", "./known/"+d, "./unknown")
 				out, err := cmd.Output()
 				if err != nil {
 					errCh <- err
@@ -95,37 +98,26 @@ func Recognize() http.HandlerFunc {
 					matches = append(matches, strings.Split(x, ",")[1])
 				}
 				if len(matches) >= Threshold {
-					respCh <- d
+					respCh <- &Match{Name: d, Count: len(matches)}
+					return
 				}
-				respCh <- ""
+				respCh <- nil
 			}(d, i)
 		}
-		response := []string{}
+		response := []Match{}
 		for {
 			select {
-			case name := <-respCh:
+			case match := <-respCh:
 				done++
-				spew.Dump(done)
+				response = processMatches(match, response)
 				if done >= len(dirs) {
 					w.Header().Set("Content-Type", "application/json")
-					err := json.NewEncoder(w).Encode(struct{ PossibleMatches []string }{PossibleMatches: response})
+					err := json.NewEncoder(w).Encode(struct{ PossibleMatches []Match }{PossibleMatches: response})
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
 					}
 					logrus.Info("Responded.")
 					return
-				}
-				if name == "" {
-					continue
-				}
-				alreadyExists := false
-				for _, x := range response {
-					if x == name {
-						alreadyExists = true
-					}
-				}
-				if !alreadyExists {
-					response = append(response, name)
 				}
 			case err := <-errCh:
 				w.Write([]byte(err.Error()))
@@ -134,6 +126,20 @@ func Recognize() http.HandlerFunc {
 		}
 
 	}
+}
+
+func processMatches(m *Match, results []Match) []Match {
+	if m == nil {
+		return results
+	}
+	for _, x := range results {
+		if x.Name == m.Name {
+			return results
+		}
+	}
+	results = append(results, *m)
+	return results
+
 }
 
 func saveFileFromReq(r *http.Request) (string, error) {
