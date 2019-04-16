@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/darahayes/go-boom"
+
+	"github.com/minhaj10p/facedetect/encoder"
 )
 
 func createFile(path string, fromFile multipart.File) error {
@@ -36,17 +39,35 @@ func AddFace() http.HandlerFunc {
 
 		inputFile, inputFileHeaders, err := r.FormFile("fileupload")
 		if err != nil {
-			log.Fatal(err)
+			boom.BadRequest(w, err.Error())
+			return
 		}
 		path, err := getOrMakeDirName(r.FormValue("name"))
 		if err != nil {
-			log.Fatal(err)
+			boom.BadRequest(w, err.Error())
+			return
 		}
 		err = createFile(fmt.Sprintf("%s/%s", path, inputFileHeaders.Filename), inputFile)
 		if err != nil {
-			log.Fatal(err)
+			boom.Internal(w)
+			return
 		}
 
+		ep, err := filepath.Abs("encodings.pickle")
+		if err != nil {
+			boom.NotFound(w, err)
+			return
+		}
+		datasetPath, err := filepath.Abs("known")
+		if err != nil {
+			boom.NotFound(w, err)
+			return
+		}
+		if err := encoder.Encode(datasetPath, ep); err != nil {
+			boom.Internal(w)
+		}
+
+		w.Write([]byte("Image successfully uploaded"))
 	}
 }
 

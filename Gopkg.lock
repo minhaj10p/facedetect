@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  digest = "1:f1178b25c1ec9c61caf63e9a6b7a82c361fc0e8d7f98b68b831832a113476ba2"
+  name = "github.com/darahayes/go-boom"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "71186248f707f8f0f4538785208dda0364f74f83"
+  version = "1.1.4"
+
+[[projects]]
   digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -39,12 +47,13 @@
   name = "golang.org/x/sys"
   packages = ["unix"]
   pruneopts = "UT"
-  revision = "97732733099d6a942a73b889770774366de963ed"
+  revision = "3fd5a3612ccd7907f26270fa92579a0f2f76f734"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/darahayes/go-boom",
     "github.com/davecgh/go-spew/spew",
     "github.com/gorilla/mux",
     "github.com/sirupsen/logrus",

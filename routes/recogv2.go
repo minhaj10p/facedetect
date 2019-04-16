@@ -28,10 +28,9 @@ func RecogV2() http.HandlerFunc {
 		}
 		unknownImageFile, err := filepath.Abs(fileName)
 		cmd := exec.Command("python3", "-m", "recognize_faces_image.py", "-e", encodingsPath, "-i", unknownImageFile, "-d", "hog")
-		out, _ := cmd.Output()
+		out, err := cmd.Output()
 		if string(out) == "" {
-			w.Write([]byte("no results found"))
-			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("string out is empty"))
 			return
 		}
 
@@ -44,7 +43,6 @@ func RecogV2() http.HandlerFunc {
 		}
 		if len(matches) == 0 {
 			w.Write([]byte("no results found"))
-			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

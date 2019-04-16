@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/darahayes/go-boom"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,8 +34,8 @@ const moreThanOneFace = ""
 const Threshold = 5
 
 type Match struct {
-	Name  string
-	Count int
+	Name  string `json:"name,omitempty"`
+	Count int    `json:"count,omitempty"`
 }
 
 // CurrDir CurrDir
@@ -65,13 +67,13 @@ func Recognize() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		savedFilePath, err := saveFileFromReq(r)
 		if err != nil {
-			w.Write([]byte(err.Error()))
+			boom.BadRequest(w, err)
 			return
 		}
 		defer os.Remove(savedFilePath)
 		dirs, err := CurrDir()
 		if err != nil {
-			w.Write([]byte(err.Error()))
+			boom.BadRequest(w, err)
 			return
 		}
 		done := 0
@@ -120,7 +122,7 @@ func Recognize() http.HandlerFunc {
 					return
 				}
 			case err := <-errCh:
-				w.Write([]byte(err.Error()))
+				boom.BadRequest(w, err)
 				return
 			}
 		}
